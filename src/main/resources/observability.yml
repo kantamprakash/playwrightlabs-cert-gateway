@@ -3,6 +3,15 @@
 # [traceId-spanId], and with OTEL_ENABLED=true the logs, traces and metrics are exported
 # over OTLP (e.g. to the Grafana stack in playwrightlabs-cert-deploy).
 management:
+  metrics:
+    distribution:
+      # Latency histograms, so dashboards can show p50/p95/p99 per route and service.
+      percentiles-histogram:
+        http.server.requests: true
+        http.client.requests: true
+        spring.cloud.gateway.requests: true
+        # Redis calls (the gateway's rate-limit counters).
+        lettuce: true
   observations:
     enable:
       # Spring Security's internal steps (filter chain before/after, authorize) add a handful of spans to
@@ -30,6 +39,9 @@ management:
   opentelemetry:
     resource-attributes:
       deployment.environment.name: ${DEPLOY_ENV:local}
+      # Which copy sent the data (the pod or container name): without it, two replicas' metrics carry
+      # identical labels and overwrite each other instead of adding up.
+      service.instance.id: ${HOSTNAME:local}
     tracing:
       export:
         otlp:
