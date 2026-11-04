@@ -48,7 +48,7 @@ class GatewayTests {
 	static final GenericContainer<?> redis = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
 
 	/** What the fake service behind the gateway received. */
-	record Received(String method, String path, Headers headers) {
+	record Received(String service, String method, String path, Headers headers) {
 	}
 
 	static final ConcurrentLinkedQueue<Received> received = new ConcurrentLinkedQueue<>();
@@ -57,19 +57,22 @@ class GatewayTests {
 
 	static final RSAKey strangerKey = newKey();
 
-	static final HttpServer backend = startBackend();
+	static final HttpServer authService = startBackend("auth");
+
+	static final HttpServer examService = startBackend("exam");
 
 	@DynamicPropertySource
 	static void routes(DynamicPropertyRegistry registry) {
-		String url = "http://localhost:" + backend.getAddress().getPort();
-		registry.add("AUTH_SERVICE_URL", () -> url);
-		registry.add("EXAM_SERVICE_URL", () -> url);
-		registry.add("gateway.jwks-uri", () -> url + "/api/auth/jwks.json");
+		String auth = "http://localhost:" + authService.getAddress().getPort();
+		registry.add("AUTH_SERVICE_URL", () -> auth);
+		registry.add("EXAM_SERVICE_URL", () -> "http://localhost:" + examService.getAddress().getPort());
+		registry.add("gateway.jwks-uri", () -> auth + "/api/auth/jwks.json");
 	}
 
 	@AfterAll
-	static void stopBackend() {
-		backend.stop(0);
+	static void stopBackends() {
+		authService.stop(0);
+		examService.stop(0);
 	}
 
 	@Autowired
@@ -110,6 +113,18 @@ class GatewayTests {
 			.expectHeader().valueEquals("X-Request-Id", "abc12345-from-nginx");
 		client.get().uri("/api/exams").header("X-Request-Id", "<script>").exchange()
 			.expectHeader().value("X-Request-Id", v -> assertThat(v).isNotEqualTo("<script>").hasSize(36));
+	}
+
+	@Test
+	void eachPathReachesTheServiceThatOwnsIt() {
+		String admin = token(signingKey, "ADMIN", 600, SecurityConfig.ISSUER);
+		var routes = java.util.Map.of("/api/auth/me", "auth", "/api/admin/users", "auth", "/api/admin/users/5/verify", "auth",
+				"/api/admin/exams", "exam", "/api/admin/usersx", "exam", "/api/exams", "exam", "/api/me/dashboard", "exam");
+		routes.forEach((path, service) -> {
+			received.clear();
+			client.get().uri(path).cookie("PWL_SESSION", admin).exchange().expectStatus().isOk();
+			assertThat(only().service()).as(path).isEqualTo(service);
+		});
 	}
 
 	@Test
@@ -225,7 +240,7 @@ class GatewayTests {
 		}
 	}
 
-	private static HttpServer startBackend() {
+	private static HttpServer startBackend(String service) {
 		try {
 			HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
 			server.createContext("/", exchange -> {
@@ -234,7 +249,7 @@ class GatewayTests {
 					body = new JWKSet(signingKey.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
 				}
 				else {
-					received.add(new Received(exchange.getRequestMethod(), exchange.getRequestURI().getPath(),
+					received.add(new Received(service, exchange.getRequestMethod(), exchange.getRequestURI().getPath(),
 							exchange.getRequestHeaders()));
 					body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
 				}

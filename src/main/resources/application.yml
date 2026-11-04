@@ -24,7 +24,7 @@ spring:
           routes:
             # Sign-in and account endpoints: strict per-IP limit against password guessing and email spam.
             - id: auth-sensitive
-              uri: ${AUTH_SERVICE_URL:http://localhost:8085}
+              uri: ${AUTH_SERVICE_URL:http://localhost:8087}
               order: 0
               predicates:
                 - Method=POST
@@ -37,7 +37,7 @@ spring:
                     redis-rate-limiter.burstCapacity: ${gateway.rate-limit.auth.burst-capacity}
                     redis-rate-limiter.requestedTokens: ${gateway.rate-limit.auth.requested-tokens}
             - id: auth
-              uri: ${AUTH_SERVICE_URL:http://localhost:8085}
+              uri: ${AUTH_SERVICE_URL:http://localhost:8087}
               order: 1
               predicates:
                 - Path=/api/auth/**
@@ -48,6 +48,13 @@ spring:
                     redis-rate-limiter.replenishRate: ${gateway.rate-limit.general.replenish-rate}
                     redis-rate-limiter.burstCapacity: ${gateway.rate-limit.general.burst-capacity}
                     redis-rate-limiter.requestedTokens: 1
+            # The admin list of registered accounts lives with the accounts.
+            - id: auth-admin
+              uri: ${AUTH_SERVICE_URL:http://localhost:8087}
+              order: 2
+              predicates:
+                - Path=/api/admin/users,/api/admin/users/**
+              filters: *general-limit
             # Everything else: exams, enrolments, attempts, certificates, admin.
             - id: exam
               uri: ${EXAM_SERVICE_URL:http://localhost:8085}
@@ -57,7 +64,7 @@ spring:
               filters: *general-limit
 
 gateway:
-  jwks-uri: ${AUTH_JWKS_URI:http://localhost:8085/api/auth/jwks.json}
+  jwks-uri: ${AUTH_JWKS_URI:http://localhost:8087/api/auth/jwks.json}
   # Nginx sits in front in Docker and on the VPS.
   trusted-proxies: ${TRUSTED_PROXIES:1}
   rate-limit:
