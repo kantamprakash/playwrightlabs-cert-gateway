@@ -1,0 +1,90 @@
+spring:
+  application:
+    name: cert-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # trusted-proxies is deliberately not set, so X-Forwarded-* headers are dropped before reaching the
+          # services (they build links from APP_BASE_URL and don't need them). The rate limiter reads the
+          # client IP from the incoming request itself (see gateway.trusted-proxies below).
+          httpclient:
+            connect-timeout: 2000
+            # Certificate PDFs can take a few seconds to render the first time.
+            response-timeout: 60s
+          default-filters:
+            # Identity comes only from the verified session cookie, never from client-sent headers.
+            - RemoveRequestHeader=X-User-Id
+            - RemoveRequestHeader=X-User-Email
+            - RemoveRequestHeader=X-User-Role
+          routes:
+            # Sign-in and account endpoints: strict per-IP limit against password guessing and email spam.
+            - id: auth-sensitive
+              uri: ${AUTH_SERVICE_URL:http://localhost:8085}
+              order: 0
+              predicates:
+                - Method=POST
+                - Path=/api/auth/login,/api/auth/register,/api/auth/forgot-password,/api/auth/reset-password,/api/auth/resend-verification,/api/auth/verify-email
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${gateway.rate-limit.auth.replenish-rate}
+                    redis-rate-limiter.burstCapacity: ${gateway.rate-limit.auth.burst-capacity}
+                    redis-rate-limiter.requestedTokens: ${gateway.rate-limit.auth.requested-tokens}
+            - id: auth
+              uri: ${AUTH_SERVICE_URL:http://localhost:8085}
+              order: 1
+              predicates:
+                - Path=/api/auth/**
+              filters: &general-limit
+                - name: RequestRateLimiter
+                  args:
+                    key-resolver: "#{@clientIpKeyResolver}"
+                    redis-rate-limiter.replenishRate: ${gateway.rate-limit.general.replenish-rate}
+                    redis-rate-limiter.burstCapacity: ${gateway.rate-limit.general.burst-capacity}
+                    redis-rate-limiter.requestedTokens: 1
+            # Everything else: exams, enrolments, attempts, certificates, admin.
+            - id: exam
+              uri: ${EXAM_SERVICE_URL:http://localhost:8085}
+              order: 10
+              predicates:
+                - Path=/api/**
+              filters: *general-limit
+
+gateway:
+  jwks-uri: ${AUTH_JWKS_URI:http://localhost:8085/api/auth/jwks.json}
+  # Nginx sits in front in Docker and on the VPS.
+  trusted-proxies: ${TRUSTED_PROXIES:1}
+  rate-limit:
+    # Tokens refill at replenish-rate per second up to burst-capacity; each request costs requested-tokens.
+    # 1/s, 60 max, 6 per request = 10 attempts at once, then 10 a minute.
+    auth:
+      replenish-rate: 1
+      burst-capacity: 60
+      requested-tokens: 6
+    # Generous, because a whole training batch may share one office IP.
+    general:
+      replenish-rate: 50
+      burst-capacity: 100
+
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    # The gateway still works (rate limits fail open) without Redis; don't report it as down.
+    redis:
+      enabled: false
