@@ -15,9 +15,21 @@
 	<description>API gateway for the Playwright Labs certification platform</description>
 	<properties>
 		<java.version>21</java.version>
+		<!-- Matches the OpenTelemetry SDK version Spring Boot 4.1.2 manages (1.62.0). -->
+		<opentelemetry-logback-appender.version>2.28.1-alpha</opentelemetry-logback-appender.version>
 		<spring-cloud.version>2025.1.4</spring-cloud.version>
 	</properties>
 	<dependencies>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-opentelemetry</artifactId>
+		</dependency>
+		<dependency>
+			<!-- Sends Logback log lines to OpenTelemetry, with the trace they belong to. -->
+			<groupId>io.opentelemetry.instrumentation</groupId>
+			<artifactId>opentelemetry-logback-appender-1.0</artifactId>
+			<version>${opentelemetry-logback-appender.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

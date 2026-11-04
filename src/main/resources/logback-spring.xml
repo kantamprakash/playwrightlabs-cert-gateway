@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Spring Boot's console logging (whose pattern includes [traceId-spanId]), plus every log line
+     sent to OpenTelemetry with the trace it belongs to. The OTEL appender is connected to the OpenTelemetry
+     SDK at startup (OpenTelemetryLogging); export happens only when OTEL_ENABLED=true. -->
+<configuration>
+	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+	<include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+	<appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+		<captureCodeAttributes>true</captureCodeAttributes>
+	</appender>
+
+	<root level="INFO">
+		<appender-ref ref="CONSOLE"/>
+		<appender-ref ref="OTEL"/>
+	</root>
+</configuration>

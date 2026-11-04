@@ -1,6 +1,12 @@
 spring:
+  config:
+    # Tracing and log/trace/metric export, shared by every service.
+    import: classpath:observability.yml
   application:
     name: cert-gateway
+  reactor:
+    # Carry the trace (and its ids in the logs) across Reactor's thread hops.
+    context-propagation: auto
   data:
     redis:
       host: ${REDIS_HOST:localhost}

@@ -17,8 +17,12 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.awaitility.Awaitility;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
@@ -37,6 +41,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
+@ExtendWith(OutputCaptureExtension.class)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
 		// Small limits so the test can hit them.
 		"gateway.rate-limit.auth.replenish-rate=1", "gateway.rate-limit.auth.burst-capacity=3",
@@ -87,14 +92,30 @@ class GatewayTests {
 	}
 
 	@Test
-	void publicEndpointsPassThroughWithARequestId() {
+	void everyRequestGetsATraceIdThatIsPassedOnAndLogged(CapturedOutput output) {
 		var res = client.get().uri("/api/exams").exchange().expectStatus().isOk().returnResult(String.class);
 
-		String id = res.getResponseHeaders().getFirst("X-Request-Id");
-		assertThat(id).isNotBlank();
+		String traceId = res.getResponseHeaders().getFirst("X-Trace-Id");
+		assertThat(traceId).matches("[0-9a-f]{32}");
+		// The service behind receives the same trace in the W3C traceparent header.
 		Received r = only();
 		assertThat(r.path()).isEqualTo("/api/exams");
-		assertThat(r.headers().getFirst("X-Request-Id")).isEqualTo(id);
+		assertThat(r.headers().getFirst("traceparent")).matches("00-" + traceId + "-[0-9a-f]{16}-0[13]");
+		// And the gateway's access-log line carries it.
+		Awaitility.await().untilAsserted(() -> assertThat(output.getOut())
+			.containsPattern("\\[" + traceId + "-[0-9a-f]{16}\\] access .*GET /api/exams 200"));
+
+		String other = client.get().uri("/api/exams").exchange().returnResult(String.class).getResponseHeaders()
+			.getFirst("X-Trace-Id");
+		assertThat(other).isNotEqualTo(traceId);
+	}
+
+	@Test
+	void continuesATraceStartedUpstream() {
+		String upstream = "4bf92f3577b34da6a3ce929d0e0e4736";
+		client.get().uri("/api/exams").header("traceparent", "00-" + upstream + "-00f067aa0ba902b7-01").exchange()
+			.expectHeader().valueEquals("X-Trace-Id", upstream);
+		assertThat(only().headers().getFirst("traceparent")).startsWith("00-" + upstream + "-");
 	}
 
 	@Test
@@ -105,14 +126,6 @@ class GatewayTests {
 		Headers h = only().headers();
 		assertThat(h.containsKey("X-Forwarded-For")).isFalse();
 		assertThat(h.containsKey("X-Forwarded-Host")).isFalse();
-	}
-
-	@Test
-	void keepsAWellFormedIncomingRequestIdAndReplacesAJunkOne() {
-		client.get().uri("/api/exams").header("X-Request-Id", "abc12345-from-nginx").exchange()
-			.expectHeader().valueEquals("X-Request-Id", "abc12345-from-nginx");
-		client.get().uri("/api/exams").header("X-Request-Id", "<script>").exchange()
-			.expectHeader().value("X-Request-Id", v -> assertThat(v).isNotEqualTo("<script>").hasSize(36));
 	}
 
 	@Test
@@ -130,7 +143,7 @@ class GatewayTests {
 	@Test
 	void privateEndpointsNeedASignedInUserAndNeverReachTheServiceWithout() {
 		client.get().uri("/api/me/dashboard").exchange().expectStatus().isUnauthorized()
-			.expectHeader().exists("X-Request-Id");
+			.expectHeader().exists("X-Trace-Id");
 		client.post().uri("/api/attempts").exchange().expectStatus().isUnauthorized();
 		assertThat(received).isEmpty();
 

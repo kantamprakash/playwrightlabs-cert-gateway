@@ -16,7 +16,7 @@ Browser ─► Nginx (TLS, React) ─► gateway ─┬─► auth service   /ap
 | Sign-in check | Reads the `PWL_SESSION` cookie (an RS256 JWT) and checks it against the auth service's public key (`AUTH_JWKS_URI`, cached). Bad or expired cookies count as signed out. |
 | Access rules | `/api/admin/**` needs the ADMIN role; `/api/me/**`, `/api/attempts/**`, `/api/auth/me` and anything not public need a signed-in user. Public: `/api/auth/**`, `/api/public/**`, `GET /api/exams[/{slug}]`. Services check again themselves. |
 | Rate limits | Per client IP, in Redis: sign-in, register, password reset and verification emails 10 at once then 10 a minute; everything else 50/s (burst 100). Over the limit: `429`. If Redis is down, requests are let through. |
-| Request ids | Every request gets `X-Request-Id` (kept if Nginx sent a sane one), passed to the services and returned to the browser; one access-log line per request. |
+| Tracing | Every request gets a W3C trace id (or continues the caller's `traceparent`), passed to the services in `traceparent`, returned to the browser in `X-Trace-Id`, and shown in every log line as `[traceId-spanId]`. One access-log line per request. With `OTEL_ENABLED=true`, logs, traces and metrics go to `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | Header hygiene | Client-sent `X-User-*` and `X-Forwarded-*` headers never reach the services. |
 
 ## Settings
@@ -28,6 +28,8 @@ Browser ─► Nginx (TLS, React) ─► gateway ─┬─► auth service   /ap
 | `AUTH_JWKS_URI` | `http://localhost:8087/api/auth/jwks.json` | |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | |
 | `TRUSTED_PROXIES` | `1` | Proxies in front that append to `X-Forwarded-For` (Nginx). The rate limiter trusts only that many entries from the end, so clients can't fake their IP. `0` = use the TCP peer. |
+| `OTEL_ENABLED` | `false` | Export logs, traces and metrics over OTLP |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP/HTTP collector |
 | `PORT` | `8080` | |
 
 ## Run

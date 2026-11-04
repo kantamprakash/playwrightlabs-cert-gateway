@@ -1,0 +1,35 @@
+# OpenTelemetry. Every request gets a W3C trace id, started at the gateway (or here, if called
+# directly) and passed on to every service it reaches. It's in every log line as
+# [traceId-spanId], and with OTEL_ENABLED=true the logs, traces and metrics are exported
+# over OTLP (e.g. to the Grafana stack in playwrightlabs-cert-deploy).
+management:
+  tracing:
+    sampling:
+      # Keep every trace: traffic is small, and a trace id from a user's report must be findable.
+      probability: 1.0
+  logging:
+    export:
+      otlp:
+        enabled: ${OTEL_ENABLED:false}
+  otlp:
+    # Only the export is switched by OTEL_ENABLED. Tracing itself (ids in logs, traceparent between
+    # services) always runs; management.tracing.export.enabled=false would switch propagation off too.
+    tracing:
+      export:
+        enabled: ${OTEL_ENABLED:false}
+    metrics:
+      export:
+        enabled: ${OTEL_ENABLED:false}
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 30s
+  opentelemetry:
+    resource-attributes:
+      deployment.environment.name: ${DEPLOY_ENV:local}
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    logging:
+      export:
+        otlp:
+          endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
