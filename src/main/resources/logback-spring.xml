@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Spring Boot's console logging (whose pattern includes [traceId-spanId]), plus every log line
      sent to OpenTelemetry with the trace it belongs to. The OTEL appender is connected to the OpenTelemetry
-     SDK at startup (OpenTelemetryLogging); export happens only when OTEL_ENABLED=true. -->
+     SDK at startup (OpenTelemetryLogging); export happens only when OTEL_ENABLED=true.
+     With the "logfile" profile, log lines also go to logging.file.name (LOGGING_FILE_NAME), rotated by
+     Spring Boot's logging.logback.rollingpolicy.* settings. -->
 <configuration>
 	<include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 	<include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
@@ -14,4 +16,11 @@
 		<appender-ref ref="CONSOLE"/>
 		<appender-ref ref="OTEL"/>
 	</root>
+
+	<springProfile name="logfile">
+		<include resource="org/springframework/boot/logging/logback/file-appender.xml"/>
+		<root level="INFO">
+			<appender-ref ref="FILE"/>
+		</root>
+	</springProfile>
 </configuration>
