@@ -8,9 +8,11 @@ COPY src src
 RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package
 
 FROM eclipse-temurin:21-jre
-RUN useradd --system --no-create-home gateway
+# A fixed numeric user, so Kubernetes can check it isn't root (runAsNonRoot). OpenShift runs it as its
+# own random user instead, which works too: the app only reads its jar.
+RUN useradd --system --no-create-home --uid 10001 gateway
 WORKDIR /app
 COPY --from=build /src/target/cert-gateway.jar cert-gateway.jar
-USER gateway
+USER 10001
 EXPOSE 8080
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "cert-gateway.jar"]

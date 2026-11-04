@@ -3,6 +3,11 @@
 # [traceId-spanId], and with OTEL_ENABLED=true the logs, traces and metrics are exported
 # over OTLP (e.g. to the Grafana stack in playwrightlabs-cert-deploy).
 management:
+  observations:
+    enable:
+      # Spring Security's internal steps (filter chain before/after, authorize) add a handful of spans to
+      # every request without saying much; the HTTP spans already show timing per service.
+      spring.security: false
   tracing:
     sampling:
       # Keep every trace: traffic is small, and a trace id from a user's report must be findable.

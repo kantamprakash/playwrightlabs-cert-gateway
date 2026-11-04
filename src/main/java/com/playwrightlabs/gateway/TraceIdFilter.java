@@ -30,8 +30,16 @@ public class TraceIdFilter implements WebFilter {
 
 	private static final Logger access = LoggerFactory.getLogger("access");
 
+	/** Docker and Kubernetes poll these every few seconds: no trace, no access-log line. */
+	static boolean isHealthCheck(String path) {
+		return path.startsWith("/actuator");
+	}
+
 	@Override
 	public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
+		if (isHealthCheck(exchange.getRequest().getPath().value())) {
+			return chain.filter(exchange);
+		}
 		traceId(exchange).ifPresent(id -> exchange.getResponse().getHeaders().set(HEADER, id));
 		long started = System.nanoTime();
 		var request = exchange.getRequest();

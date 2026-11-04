@@ -111,6 +111,12 @@ class GatewayTests {
 	}
 
 	@Test
+	void healthChecksAreNeitherTracedNorLogged(CapturedOutput output) {
+		client.get().uri("/actuator/health/readiness").exchange().expectStatus().isOk().expectHeader().doesNotExist("X-Trace-Id");
+		assertThat(output.getOut()).doesNotContain("GET /actuator/health/readiness");
+	}
+
+	@Test
 	void continuesATraceStartedUpstream() {
 		String upstream = "4bf92f3577b34da6a3ce929d0e0e4736";
 		client.get().uri("/api/exams").header("traceparent", "00-" + upstream + "-00f067aa0ba902b7-01").exchange()
